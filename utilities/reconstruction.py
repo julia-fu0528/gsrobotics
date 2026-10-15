@@ -66,6 +66,7 @@ class Reconstruction3D:
         self.depth_map_zero_counter: int = 0
         self.depth_map_zero: np.ndarray = np.zeros((image_height, image_width))
         self.net: Optional[torch.nn.Module] = None
+        self.invalid_normal_fraction: float = 0.0
 
     def load_nn(self, net_path: str) -> Optional[torch.nn.Module]:
         """
@@ -125,6 +126,7 @@ class Reconstruction3D:
             contact_mask = np.ones(image.shape[:2], dtype=bool)
 
         image_height, image_width = image.shape[:2]
+        self.invalid_normal_fraction = 0.0
 
         if markers_threshold:
             # Convert to grayscale for mask computation.
@@ -137,6 +139,9 @@ class Reconstruction3D:
             # Invert marker mask to get the contact mask.
             contact_mask = np.logical_not(marker_mask)
 
+        if not np.any(contact_mask):
+            raise ValueError("No valid image pixels remain after marker masking")
+
         # Initialize arrays for normal components and depth map.
         normal_x = np.zeros(image.shape[:2])
         normal_y = np.zeros(image.shape[:2])
@@ -146,7 +151,7 @@ class Reconstruction3D:
         image_contact_normalized = image[np.where(contact_mask)] / 255.0
 
         # Get normalized pixel positions.
-        px_positions_normalized = np.vstack(np.where(contact_mask)).T
+        px_positions_normalized = np.vstack(np.where(contact_mask)).T.astype(np.float32)
         px_positions_normalized[:, 0] = px_positions_normalized[:, 0] / image_height
         px_positions_normalized[:, 1] = px_positions_normalized[:, 1] / image_width
 
@@ -162,9 +167,17 @@ class Reconstruction3D:
         normal_x[np.where(contact_mask)] = out[:, 0].cpu().detach().numpy()
         normal_y[np.where(contact_mask)] = out[:, 1].cpu().detach().numpy()
 
-        # Calculate z-axis normal.
-        normal_z = np.sqrt(1 - np.power(normal_x, 2) - np.power(normal_y, 2))
-        normal_z[np.isnan(normal_z)] = np.nanmean(normal_z)
+        # Follow the upstream mean-valid-Z fallback for invalid predictions.
+        # Clamping invalid radicands to epsilon instead creates ~1000x slopes.
+        radicand = 1 - normal_x**2 - normal_y**2
+        valid_z = np.isfinite(radicand) & (radicand > 1e-6) & contact_mask
+        invalid = contact_mask & ~valid_z
+        self.invalid_normal_fraction = float(invalid.sum() / contact_mask.sum())
+        if not np.isfinite(out.cpu().numpy()).all() or not np.any(valid_z):
+            raise ValueError("Depth model produced no usable surface normals")
+        normal_z = np.ones_like(normal_x)
+        normal_z[valid_z] = np.sqrt(radicand[valid_z])
+        normal_z[invalid] = normal_z[valid_z].mean()
 
         gradient_x = -normal_x / normal_z
         gradient_y = -normal_y / normal_z
@@ -196,7 +209,10 @@ class Reconstruction3D:
 
         self.depth_map_zero_counter += 1
 
-        # Subtract the accumulated zero depth for normalization.
-        depth_map -= self.depth_map_zero
+        # During calibration the accumulator is a sum, not yet an average.
+        if self.depth_map_zero_counter < 50:
+            depth_map -= self.depth_map_zero / self.depth_map_zero_counter
+        else:
+            depth_map -= self.depth_map_zero
 
         return depth_map, contact_mask, gradient_x, gradient_y

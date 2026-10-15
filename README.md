@@ -21,6 +21,128 @@ On this page, you will find
 
 # Demo Scripts
 
+## Browser Recorder
+
+The local English recording UI and recorded video use three rows: raw camera image
+and RGB difference image; image-gradient arrows and HOG; then a full-width 3D
+deformation view. Recording saves a combined movie and synchronized PNGs for each
+view and each complete layout. It follows the session and numeric-data
+approach in `Daimon_Robotics/tactile_recorder`; it does not depend on that folder
+or open a second camera connection.
+
+From this repository, with the existing GelSight Python environment activated:
+
+```bash
+python -m tactile_recorder.server
+```
+
+Open **http://127.0.0.1:8080**. Select the camera by name in the **Camera** dropdown,
+then click **Connect**. **Refresh cameras** rescans connected Linux devices; the
+list also refreshes every three seconds. Stable USB identifiers are preferred
+over `/dev/videoN` numbers, and UVC companion metadata nodes are omitted.
+The server starts without opening a camera unless `--device` or `--demo` is given.
+Close other applications using the selected camera first. Keep the sensor
+untouched through the initial 50-frame depth calibration, enter an optional
+session label, then select **Start recording**. **Stop recording** finalizes the
+session; **Set reference** starts a new untouched calibration after stopping.
+Recording continues if the browser tab is closed. Stop the server with Ctrl+C
+to finalize any active session.
+
+To change cameras, stop recording, select another source, and click **Connect**.
+The previous camera is released and the image/depth reference is reset. After
+unplugging a camera, the UI stays available: reconnect the sensor, refresh the
+list, and connect again without restarting the server. An interrupted recording
+is finalized with an error status. **Disconnect** releases the current source.
+The **GelSight Mini depth** checkbox defaults on for recognized GelSight Mini
+cameras and off for other cameras; raw, difference, gradient, and HOG views also
+work without depth. Select **Demo — synthetic data** to use generated frames.
+
+For an optional automatic startup connection, `--device /dev/video4`, a numeric
+index such as `--device 0`, or a stable `/dev/v4l/by-id/...` path remains supported.
+The camera can still be changed in the UI. Depth defaults on only for a recognized
+GelSight Mini (or Demo), unless `--no-depth` sets the initial mode to image-only.
+
+To try the controls without hardware:
+
+```bash
+python -m tactile_recorder.server --demo
+```
+
+Demo images and depth are synthetic and identified as such in the UI and session
+metadata. The default processing/recording target is 5 Hz; actual frame rate is
+shown in the UI. Options include `--fps 10`, `--port 8081`, `--output /path/to/data`,
+`--model /path/to/nnmini.pt`, `--border 0.15`, and `--no-depth` for image-only work.
+The default crop and processing size (320 × 240) follow the existing GS pipeline.
+The web server listens on localhost and uses the Python standard library, NumPy,
+OpenCV, and SciPy; depth additionally uses the existing PyTorch model. No web
+framework, CDN, Node build, or Open3D viewer is required.
+
+Each session is written to a unique directory under `recordings/`:
+
+| Output | Contents |
+| --- | --- |
+| `raw/*.png` | Unmodified OpenCV camera frames, lossless; no crop, labels, or overlays. These are decoded camera images, not Bayer data. |
+| `image/*.png` | Exact cropped/resized sensing image used for image features and depth. |
+| `deformation/*.png` | Signed RGB difference from the frozen two-frame untouched reference, displayed around neutral gray. |
+| `gradient/*.png`, `hog/*.png` | The same feature overlays shown in the browser. |
+| `deformation_3d/*.png` | Fixed-view 960 × 360 surface rendering used in the video's bottom row, when depth is available. |
+| `overview/*.png` | Complete 960 × 1164 three-row video layout for every captured frame. |
+| `overview.mp4` | Three-row video; falls back to `overview.avi` with MJPEG if MP4 encoding is unavailable. |
+| `video_frames.csv` | Movie frame index and presentation time, source capture/frame/timestamp, and whether a frame was held across a gap. |
+| `numeric/*.npz` | Normalized BGR reference and signed BGR difference, image/reference grayscale, signed image gradients, magnitude, HOG arrays, frame/timestamps/reference epoch; depth, surface slopes, valid mask, and organized XYZ points when available. |
+| `depth/*.npy` | Lossless float32 signed relative deformation depth. |
+| `pcd/*.pcd` | Binary float32 XYZ point cloud, one point per sensing-image pixel. |
+| `depth_preview/*.png` | Depth heatmap with its per-frame display limit stored in NPZ, separate from the first-row RGB difference. |
+| `frames.csv`, `session.json` | Committed frame index, host read timestamps, processing settings, label, session status and final frame count. |
+
+Matching file stems identify the same source frame. CSV rows are written after
+all files for that frame succeed; use the CSV as the committed-frame index if a
+session is interrupted. Timing is based on host reads, not hardware exposure
+timestamps; slower processing produces fewer distinct captures. The video uses
+the requested FPS and holds the previous capture across timing gaps, while PNGs
+and NPZs save each acquired frame only once. Captures in the same video time slot
+remain in PNG/NPZ even if not selected for the movie. The last video frame has one
+frame interval of duration; no extra tail is appended after the last capture.
+The video 3D view has a fixed yaw of −0.4 radians and pitch of 0.8 radians, with
+Z × 1 and surface fitting; browser orbit/zoom does not change recordings.
+Missing depth produces an explicit unavailable panel, never a stale surface.
+Use **Stop recording** or Ctrl+C to finalize the movie container.
+Downloads in the UI export the current processed frame, depth, or point cloud.
+Browser polling and rendering do not control acquisition or recording.
+
+Image features subtract a frozen mean of the first two sensing-image frames.
+The first-row deformation image is a three-channel RGB difference, not depth or
+optical flow. PNG encoding uses `clip(round(128 + 255 * image_delta_bgr), 0, 255)`;
+neutral gray is zero change. Numeric `image_reference_bgr` and `image_delta_bgr`
+retain float32 normalized intensities, including negative differences, without
+display clipping. OpenCV arrays use BGR channel order; PNG viewers show RGB.
+Image gradients are central differences of grayscale intensity scaled to [0, 1];
+arrows show the strongest sample in each 12 × 12 region with a fixed display gain.
+HOG uses 8-pixel cells, nine unsigned bins, interpolated votes, and 2 × 2 L2-Hys
+blocks, adapted from Daimon's implementation. The GS crop is not Daimon's SDK
+perspective rectification, so descriptors are not automatically interchangeable.
+
+Depth is reconstructed from RGB using `models/nnmini.pt`, surface slopes, and the
+existing Poisson solver. It is relative to the initial 50 untouched frames, not
+an independent depth-camera measurement. X/Y point coordinates are image column/
+row indices; Z retains signed model depth units. No physical millimeter calibration
+is assumed. The point-cloud preview uses Z × 1 and fits the surface in the viewport;
+exported data is unchanged. Image gradients and model surface slopes are separate
+arrays. Depth preview uses a symmetric per-frame range (at least ±1 model unit),
+with the range shown in the UI and stored as `depth_display_limit`. Depth/point
+downloads retain the full values. Invalid predicted normal Z components use the
+upstream mean-valid-Z fallback, with the repaired fraction saved as
+`invalid_normal_fraction`. Frames with no usable normals omit depth and keep image
+recording available. This is estimated surface height, not a measured displacement
+vector field; in-plane marker displacement requires the separate marker tracker.
+
+Validation (including a local HTTP integration test):
+
+```bash
+python -m unittest discover -s tests -v
+node --test tests/test_recorder_ui.js
+```
+
 ## LiveView Demo
 
 1. Run `demo_liveview.py` in PyCharm. You should see a window app for live view session. On top bar you have device selection option. This is especially helpful if you have web cameras, or more than one GelSight Mini. Once a device is choosen, live feed should start.

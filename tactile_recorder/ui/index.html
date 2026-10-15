@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GelSight · Tactile Recorder</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header><div class="brand"><span class="mark">G</span><div>GELSIGHT <span class="muted">/ LAB TOOLS</span></div></div><span id="connection" class="badge">Connecting…</span></header>
+<main>
+<div class="heading"><div><p class="eyebrow">ACQUISITION WORKSPACE</p><h1>Tactile Recorder</h1><p class="subtitle">Capture the contact. Explore the image and surface.</p></div><div class="source"><span class="eyebrow">SOURCE</span><div id="source">Waiting for sensor</div></div></div>
+<section class="camera-controls" aria-label="Camera source">
+<label class="camera-select">Camera<select id="camera"><option value="">Choose a camera…</option></select></label>
+<button id="refreshCameras">↻ Refresh cameras</button>
+<label class="depth-toggle"><input type="checkbox" id="cameraDepth"> GelSight Mini depth</label>
+<button id="connectCamera" class="primary" disabled>Connect</button>
+<button id="disconnectCamera" disabled>Disconnect</button>
+<p id="cameraHint" role="status">Choose a camera to begin. The list updates when you plug in a sensor.</p>
+</section>
+<section class="toolbar" aria-label="Recording controls"><label>Session label<input id="label" placeholder="e.g. textured-surface-01" maxlength="200"></label><button id="record" class="primary" disabled>● Start recording</button><button id="stop" disabled>■ Stop recording</button><button id="calibrate" disabled>↻ Set reference</button><div class="stats"><strong id="fps">—</strong><span>FPS</span></div><div class="stats"><strong id="count">0</strong><span>SAVED FRAMES</span></div></section>
+<div class="statusline"><span id="status" role="status">Waiting for the first frame…</span><span id="frame">FRAME —</span></div>
+<div id="error" role="alert" hidden></div>
+<div class="grid">
+<section class="panel"><div class="panelhead"><h2><span>01</span> Raw image</h2><span class="tag">CAMERA</span></div><div class="imagebox"><img id="raw" alt="Raw camera frame" hidden><span class="placeholder">Waiting for camera</span></div><p>Original camera pixels · saved without overlays</p></section>
+<section class="panel"><div class="panelhead"><h2><span>02</span> Deformation image</h2><span class="tag">RGB DIFFERENCE</span></div><div class="imagebox"><img id="deformation" alt="Signed RGB difference from the untouched reference" hidden><span class="placeholder">Waiting for reference</span></div><p>Current sensing image − untouched reference · neutral gray = no change</p></section>
+<section class="panel"><div class="panelhead"><h2><span>03</span> Image gradient</h2><span class="tag yellow">DIRECTION + STRENGTH</span></div><div class="imagebox"><img id="gradient" alt="Image gradient arrows over the sensing image" hidden><span class="placeholder">Waiting for reference</span></div><p>Reference-subtracted intensity gradients on the sensing image</p></section>
+<section class="panel"><div class="panelhead"><h2><span>04</span> HOG</h2><span class="tag green">LOCAL ORIENTATION</span></div><div class="imagebox"><img id="hog" alt="HOG orientation glyphs over the sensing image" hidden><span class="placeholder">Waiting for reference</span></div><p>8 px cells · 9 unsigned orientation bins · L2-Hys</p></section>
+<section class="panel cloudpanel"><div class="panelhead"><h2><span>05</span> 3D deformation</h2><div><button id="resetView" class="small">Reset view</button><a id="depthDownload" class="download disabled" href="/api/depth.npy">↓ Depth NPY</a> <a id="cloudDownload" class="download disabled" href="/api/cloud.pcd">↓ PCD</a></div></div><div class="cloudbox"><canvas id="cloud" aria-label="Interactive estimated surface point cloud. Drag to rotate and scroll to zoom."></canvas><span class="placeholder" id="cloudEmpty">Depth is not available yet</span><span class="canvasHint">DRAG TO ROTATE · SCROLL TO ZOOM</span></div><p>Estimated surface · X/Y: pixels · Z × 1 · <span id="depthScale">Z: model units</span></p><p>Video uses a fixed 3D view, independent of browser rotation.</p></section>
+</div>
+<section class="session"><div><p class="eyebrow">RECORDING OUTPUT</p><p id="sessionPath">Start a session to save synchronized frames.</p><p class="muted">Three-row video + overview PNGs / raw + RGB difference + feature + 3D PNGs / numeric NPZ + depth NPY + PCD / timestamps CSV</p></div><a id="frameDownload" class="download disabled" href="/api/frame.npz">↓ Current frame bundle</a></section>
+<footer><span>Keep the sensor untouched while setting the reference. Stop recording before recalibrating.</span><span>Model reconstruction · not a measured displacement field.</span></footer>
+</main><script src="/app.js"></script></body></html>
